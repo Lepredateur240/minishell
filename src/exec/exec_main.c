@@ -6,18 +6,40 @@
 /*   By: masenche <masenche@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/03/01 18:16:41 by masenche          #+#    #+#             */
-/*   Updated: 2026/03/01 18:18:41 by masenche         ###   ########.fr       */
+/*   Updated: 2026/03/01 18:25:18 by masenche         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "minishell.h"
 
-void execute_command(t_cmd *cmd, t_minishell *minishell)
+void exe_child(t_cmd *cmd, t_minishell *minishell, char**envp)
+{
+	// 1. Appliquer les redirections
+	if (cmd->fd_in > 2) // Si c'est un fichier ouvert
+	{
+		dup2(cmd->fd_in, STDIN_FILENO);
+		close(cmd->fd_in);
+	}
+	if (cmd->fd_out > 2) // Si c'est un fichier ouvert
+	{
+		dup2(cmd->fd_out, STDOUT_FILENO);
+		close(cmd->fd_out);
+	}
+	// 2. Exécuter le programme
+	if (execve(cmd->cmd_path, cmd->args, envp) == -1)
+	{
+		perror("minishell");
+		exit(127); 
+	}
+}
+
+void exec_command(t_cmd *cmd, t_minishell *minishell)
 {
 	pid_t pid;
 	int   status;
+	char  **env_tab; // Pour stocker l'environnement converti
 
-	// 1. Création du processus enfant
+	// env_tab = convert_env_to_tab(minishell->env); // Convertir la liste d'environnement en tableau de chaînes
 	pid = fork();
 	if (pid == -1)
 	{
@@ -25,22 +47,15 @@ void execute_command(t_cmd *cmd, t_minishell *minishell)
 		return ;
 	}
 	if (pid == 0) // Processus ENFANT
-	{
-		// 2. Remplacer l'enfant par le nouveau programme
-		// cmd->cmd_path a été trouvé via find_path() dans ton code
-		if (execve(cmd->cmd_path, cmd->args, envp) == -1)
-		{
-			perror("minishell");
-			exit(127); // Code standard si la commande échoue
-		}
-	}
+		exe_child(cmd, minishell, env_tab);
 	else // Processus PARENT
 	{
-		// 3. Attendre que l'enfant se termine
 		waitpid(pid, &status, 0);
-		
-		// 4. Récupérer le code de sortie pour $?
+		// On récupère le statut
 		if (WIFEXITED(status))
 			minishell->exit_status = WEXITSTATUS(status);
+		if (cmd->fd_in > 2) close(cmd->fd_in);
+		if (cmd->fd_out > 2) close(cmd->fd_out);
+		// free_tab(env_tab);
 	}
 }
